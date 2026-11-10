@@ -1,0 +1,277 @@
+{# Case detail / event audit trail template (issue #55). Every piece of display text below is a
+   double-brace interpolation of a value that rtbf_agent.api.case_detail.case_detail already
+   resolved via I18nProvider.translate() -- this file itself contains no hardcoded English (or any
+   other language's) text, per R23. tests/api/test_case_detail.py scans this file mechanically to
+   enforce that: everything outside double-brace interpolations, percent-brace control blocks,
+   this comment, and HTML tags/attributes must be pure whitespace.
+
+   event.detail_items' "label"/"value" pairs are also interpolations, not literals authored here --
+   for document-kind events they come from a fixed hash/size/extension allowlist
+   (case_detail.py's _document_detail_items()); for every other kind they are the event's own
+   free-form audit data (e.g. a drafted request's subject/body), never text this template invents.
+
+   Approve/reject forms (issue #67): plain HTML <form> POSTs to api/approval.py's routes, only
+   rendered when can_approve is true (the case is eligible to send -- Draft ready and not yet
+   approved, or Requires human action with a pending preview draft, the drafting-is-a-preview
+   redesign) -- no client-side state management, matching api/app.py's "server-rendered HTML, not
+   an SPA" decision.
+
+   Follow-up confirm/dispute forms (automated-case-loop rework, Phase 5): same plain-HTML-POST
+   shape, posting to api/followup.py's routes, only rendered when pending_followup is set (an
+   unconsumed classified reply is actually pending -- only ever REJECTION now; see case_detail.py's
+   module docstring). pending_followup.reasoning is the agent's own audit data (already
+   i18n-labeled), never text this template invents.
+
+   Reopen form (mitigating control for follow_up()'s CONFIRMATION auto-close): same plain-HTML-POST
+   shape, posting to api/followup.py's reopen route, only rendered when can_reopen is true (the
+   case is actually Deletion confirmed).
+
+   Additional-info forms (automated-case-loop rework, Phase 5): a text <form> and a file-upload
+   <form>, posting to api/document.py's routes, only rendered when can_provide_additional_info is
+   true (the case is actually in Requires human action). additional_info_summary is the latest
+   additional_info_requested event's own reasoning, not text this template invents.
+   pending_additional_info_text (maintainer live-UX feedback) is the freshest text answer already
+   on record for the current round -- shown above the textarea (which it also pre-fills) since the
+   textarea itself always renders empty on a fresh page load regardless of what was submitted
+   earlier, and without this there was no way to confirm what note a subsequent "Draft" click would
+   actually use.
+
+   "Draft" form (drafting-is-a-preview redesign, superseding issue #117/#119's fused "this round is
+   ready" draft+send button -- see followup.py's module docstring): a third, visually-separated
+   <form> in the same block (dashed top border, bold button -- deliberately not styled like the two
+   recording forms above it), posting to api/document.py's additional-info/draft route
+   (followup.draft_additional_info_response()). Composes a preview only -- case.state stays
+   Requires human action -- so the edit/approve/reject section below (can_edit_draft/can_approve)
+   appears right on this same page once a draft exists, without the case ever appearing to change
+   kanban column.
+
+   Document vault section (issue #111): alongside the upload form above, a checkbox list of
+   existing vault documents (vault_documents, each already i18n-safe -- "label" is either the
+   document's own human-supplied label or a "document-{id}" fallback built in case_detail.py, never
+   free text authored here), posting to api/vault.py's select-documents route. Links to /vault
+   (api/vault.py's own browse/delete page) for full vault management. Each document's own
+   "selected" flag (maintainer live-UX feedback, LLM-drafted-replies extension) -- whether
+   followup.selected_documents() currently counts it as this round's actual selection, the same
+   read cli.run_once()'s send loop uses to decide what gets attached -- pre-checks its checkbox and
+   shows vault_selected_badge_text next to it, so re-opening this page after selecting shows what's
+   really going to be sent, not always-unchecked boxes regardless of prior selection.
+
+   Jurisdiction/drafting-language override forms (no-prompt-at-creation reversal): two independent
+   plain-HTML-POST forms (R22 -- never a package deal), posting to api/case_overrides.py's routes,
+   only rendered when can_edit_case_overrides is true (the case is still Discovered, before
+   agent_loop._classify() locks these fields in) -- each pre-filled with the current, possibly-empty
+   value. The case summary above always shows both fields' current value (or blank) regardless of
+   editability.
+
+   Recipient confirmation form (follow-up to #94): same plain-HTML-POST shape, posting to
+   api/recipient.py's route, rendered while can_confirm_recipient is true. The input is pre-filled
+   with case.recipient_email if already set, else recipient_suggestion.recipient if a proposal
+   exists, else empty -- submitting unedited accepts the suggestion, editing first overrides it.
+   recipient_suggestion's reasoning/sources are the LLM's own audit data (already i18n-labeled by
+   the two labels around them), never text this template invents.
+
+   Each event is a native <details>/<summary> element (collapsed by default, no `open` attribute):
+   the always-visible <summary> reuses the same kind/actor/timestamp interpolations the header used
+   before, so a busy case's history isn't a wall of fully-expanded text -- a human expands only the
+   phase(s) they want to inspect. Plain HTML disclosure widget, not a second client-side-state
+   mechanism: no JS anywhere in this file, same "server-rendered, no SPA" decision as the
+   approve/reject forms above.
+#}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1rem; margin-top: 1.5rem; }
+  .back-link { display: inline-block; margin-bottom: 1rem; }
+  .case-summary div { font-size: 0.9rem; margin: 0.15rem 0; }
+  .event { border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+  .event-header { font-size: 0.9rem; font-weight: bold; cursor: pointer; }
+  .event-header span + span::before { content: " \2014 "; font-weight: normal; }
+  .event-field { font-size: 0.85rem; margin: 0.15rem 0; white-space: pre-wrap; }
+  .event-details[open] .event-header { margin-bottom: 0.25rem; }
+  .empty { color: #888; font-style: italic; font-size: 0.85rem; }
+  .approval { border: 1px solid #ccc; border-radius: 6px; padding: 0.75rem; margin: 1rem 0; }
+  .approval-heading { font-size: 0.9rem; margin: 0 0 0.5rem 0; }
+  .approval-actions { display: flex; gap: 0.5rem; }
+  .approval-actions button { font-size: 0.9rem; padding: 0.4rem 0.9rem; }
+  .recipient-suggestion { font-size: 0.85rem; background: #fff8e1; border: 1px solid #e0c060; border-radius: 4px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+  .recipient-suggestion .notice { font-weight: bold; margin: 0 0 0.25rem 0; }
+  .recipient-form input[type="email"] { font-size: 0.9rem; padding: 0.3rem 0.5rem; width: 100%; max-width: 24rem; box-sizing: border-box; }
+  .case-override-form { margin-bottom: 0.75rem; }
+  .case-override-form input[type="text"] { font-size: 0.9rem; padding: 0.3rem 0.5rem; width: 100%; max-width: 24rem; box-sizing: border-box; }
+  .section-hint { font-size: 0.8rem; color: #666; margin: 0.25rem 0 0.5rem 0; }
+  .additional-info-form { margin-bottom: 0.75rem; }
+  .additional-info-form textarea { font-size: 0.9rem; padding: 0.3rem 0.5rem; width: 100%; max-width: 24rem; box-sizing: border-box; }
+  .pending-text-note { font-size: 0.85rem; background: #eef6ff; border: 1px solid #b8d4f0; border-radius: 4px; padding: 0.4rem 0.6rem; margin: 0.25rem 0 0.5rem 0; white-space: pre-wrap; }
+  .vault-section { margin-top: 0.75rem; border-top: 1px solid #ddd; padding-top: 0.75rem; }
+  .vault-option { font-size: 0.9rem; display: block; margin: 0.15rem 0; }
+  .vault-selected-badge { font-size: 0.75rem; font-weight: bold; color: #1a7a1a; }
+  .additional-info-draft { margin-top: 0.75rem; border-top: 1px dashed #999; padding-top: 0.75rem; }
+  .draft-button { font-weight: bold; }
+</style>
+</head>
+<body>
+<a class="back-link" href="/cases">{{ back_link_text }}</a>
+<h1>{{ page_title }}</h1>
+<div class="case-summary">
+  <div>{{ site_label }} {{ case.site }}</div>
+  <div>{{ domain_label }} {{ case.domain }}</div>
+  <div>{{ state_label }} {{ case.state }}</div>
+  <div>{{ recipient_label }} {% if case.recipient_email %}{{ case.recipient_email }}{% else %}{{ recipient_not_set_text }}{% endif %}</div>
+  <div>{{ jurisdiction_label }} {{ case.applicable_jurisdiction or "" }}</div>
+  <div>{{ drafting_language_label }} {{ case.drafting_language or "" }}</div>
+</div>
+{% if can_confirm_recipient %}
+<div class="approval">
+  <p class="approval-heading">{{ recipient_heading }}</p>
+  {% if recipient_suggestion %}
+  <div class="recipient-suggestion">
+    <p class="notice">{{ recipient_unverified_notice }} {{ recipient_suggestion.recipient or "" }}</p>
+    <div>{{ recipient_reasoning_label }} {{ recipient_suggestion.reasoning or "" }}</div>
+    <div>{{ recipient_sources_label }} {{ recipient_suggestion.sources | join(", ") }}</div>
+  </div>
+  {% endif %}
+  <form class="recipient-form" method="post" action="/cases/{{ case.id }}/recipient">
+    <label for="recipient_email">{{ recipient_input_label }}</label><br>
+    <input type="email" id="recipient_email" name="recipient_email" value="{{ case.recipient_email or (recipient_suggestion.recipient if recipient_suggestion else '') }}">
+    <p class="section-hint">{{ recipient_confirm_hint }}</p>
+    <button type="submit">{{ recipient_confirm_button_text }}</button>
+  </form>
+</div>
+{% endif %}
+{% if can_edit_case_overrides %}
+<div class="approval">
+  <p class="approval-heading">{{ case_overrides_heading }}</p>
+  <form class="case-override-form" method="post" action="/cases/{{ case.id }}/jurisdiction">
+    <label for="jurisdiction">{{ jurisdiction_input_label }}</label><br>
+    <input type="text" id="jurisdiction" name="jurisdiction" value="{{ case.applicable_jurisdiction or '' }}" maxlength="100" required>
+    <p class="section-hint">{{ jurisdiction_hint }}</p>
+    <button type="submit">{{ jurisdiction_set_button_text }}</button>
+  </form>
+  <form class="case-override-form" method="post" action="/cases/{{ case.id }}/drafting-language">
+    <label for="drafting_language">{{ drafting_language_input_label }}</label><br>
+    <input type="text" id="drafting_language" name="drafting_language" value="{{ case.drafting_language or '' }}" maxlength="100" required>
+    <p class="section-hint">{{ drafting_language_hint }}</p>
+    <button type="submit">{{ drafting_language_set_button_text }}</button>
+  </form>
+</div>
+{% endif %}
+{% if can_approve %}
+<div class="approval">
+  <p class="approval-heading">{{ approval_heading }}</p>
+  <div class="approval-actions">
+    <form method="post" action="/cases/{{ case.id }}/approve">
+      <button type="submit">{{ approve_button_text }}</button>
+    </form>
+    <form method="post" action="/cases/{{ case.id }}/reject">
+      <button type="submit">{{ reject_button_text }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if pending_followup %}
+<div class="approval">
+  <p class="approval-heading">{{ followup_heading }}</p>
+  <div>{{ followup_reasoning_label }} {{ pending_followup.reasoning or "" }}</div>
+  <p class="section-hint">{{ followup_confirm_hint }}</p>
+  <div class="approval-actions">
+    <form method="post" action="/cases/{{ case.id }}/followup/confirm">
+      <button type="submit">{{ followup_confirm_button_text }}</button>
+    </form>
+    <form method="post" action="/cases/{{ case.id }}/followup/dispute">
+      <button type="submit">{{ followup_dispute_button_text }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if can_reopen %}
+<div class="approval">
+  <p class="approval-heading">{{ reopen_heading }}</p>
+  <p class="section-hint">{{ reopen_hint }}</p>
+  <form method="post" action="/cases/{{ case.id }}/followup/reopen">
+    <button type="submit">{{ reopen_button_text }}</button>
+  </form>
+</div>
+{% endif %}
+{% if can_provide_additional_info %}
+<div class="approval">
+  <p class="approval-heading">{{ additional_info_heading }}</p>
+  {% if additional_info_summary %}
+  <div>{{ additional_info_summary }}</div>
+  {% endif %}
+  <p class="section-hint">{{ additional_info_hint }}</p>
+  {% if pending_additional_info_text %}
+  <div class="pending-text-note"><strong>{{ additional_info_pending_text_label }}</strong> {{ pending_additional_info_text }}</div>
+  {% endif %}
+  <form class="additional-info-form" method="post" action="/cases/{{ case.id }}/text-response">
+    <label for="text">{{ additional_info_text_label }}</label><br>
+    <textarea id="text" name="text" rows="3" maxlength="10000" required>{{ pending_additional_info_text or "" }}</textarea><br>
+    <button type="submit">{{ additional_info_text_button_text }}</button>
+  </form>
+  <form class="additional-info-form" method="post" action="/cases/{{ case.id }}/document" enctype="multipart/form-data">
+    <label for="document">{{ additional_info_document_label }}</label><br>
+    <input type="file" id="document" name="documents" accept="image/*,.pdf,.doc,.docx" multiple><br>
+    <label for="document-label">{{ additional_info_label_field }}</label><br>
+    <input type="text" id="document-label" name="label" maxlength="255"><br>
+    <button type="submit">{{ additional_info_document_button_text }}</button>
+  </form>
+  <div class="additional-info-draft">
+    <p class="section-hint">{{ additional_info_draft_hint }}</p>
+    <form method="post" action="/cases/{{ case.id }}/additional-info/draft">
+      <button type="submit" class="draft-button">{{ additional_info_draft_button_text }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if can_edit_draft %}
+<div class="approval">
+  <p class="approval-heading">{{ edit_draft_heading }}</p>
+  <p class="section-hint">{{ edit_draft_hint }}</p>
+  <form class="additional-info-form" method="post" action="/cases/{{ case.id }}/edit-draft">
+    <label for="body">{{ edit_draft_label }}</label><br>
+    <textarea id="body" name="body" rows="8" maxlength="10000" required>{{ current_draft_body or "" }}</textarea><br>
+    <button type="submit">{{ edit_draft_button_text }}</button>
+  </form>
+</div>
+{% endif %}
+{% if show_document_forms %}
+<div class="approval">
+  <div class="vault-section">
+    <p class="approval-heading">{{ vault_heading }}</p>
+    {% if vault_documents %}
+    <p class="section-hint">{{ vault_hint }}</p>
+    <form class="additional-info-form" method="post" action="/cases/{{ case.id }}/select-documents">
+      {% for document in vault_documents %}
+      <label class="vault-option"><input type="checkbox" name="document_ids" value="{{ document.id }}"{% if document.selected %} checked{% endif %}> {{ document.label }}{% if document.selected %} <span class="vault-selected-badge">{{ vault_selected_badge_text }}</span>{% endif %} <a href="/vault/{{ document.id }}/download">{{ vault_download_link_text }}</a></label><br>
+      {% endfor %}
+      <button type="submit">{{ vault_select_button_text }}</button>
+    </form>
+    {% else %}
+    <p class="empty">{{ vault_empty_text }}</p>
+    {% endif %}
+    <a class="back-link" href="/vault">{{ vault_link_text }}</a>
+  </div>
+</div>
+{% endif %}
+<h2>{{ events_heading }}</h2>
+{% if events %}
+  {% for event in events %}
+  <details class="event event-details">
+    <summary class="event-header">
+      <span>{{ kind_label }} {{ event.kind }}</span><span>{{ actor_label }} {{ event.actor }}</span><span>{{ timestamp_label }} {{ event.timestamp }}</span>
+    </summary>
+    {% for item in event.detail_items %}
+    <div class="event-field">{{ item.label }} {{ item.value }}</div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+{% else %}
+  <p class="empty">{{ empty_events_text }}</p>
+{% endif %}
+</body>
+</html>

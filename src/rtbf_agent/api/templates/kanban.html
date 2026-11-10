@@ -1,0 +1,60 @@
+{# Kanban board template (issue #54). Every piece of display text below is a double-brace
+   interpolation of a value that rtbf_agent.api.kanban.kanban_board already resolved via
+   I18nProvider.translate() -- this file itself contains no hardcoded English (or any other
+   language's) text, per R23. tests/api/test_kanban.py scans this file mechanically to enforce
+   that: everything outside double-brace interpolations, percent-brace control blocks, this
+   comment, and HTML tags/attributes must be pure whitespace.
+
+   Add-a-case form (issue #125's kanban half): a plain HTML <form> POSTing to api/add_case.py's
+   route, same "server-rendered HTML, not an SPA" shape as every other form in this app. #}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; }
+  h1 { font-size: 1.25rem; }
+  .board { display: flex; gap: 1rem; overflow-x: auto; align-items: flex-start; }
+  .column { flex: 0 0 260px; }
+  .column h2 { font-size: 0.95rem; }
+  .card { border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+  .card a { text-decoration: none; color: inherit; display: block; }
+  .card div { font-size: 0.85rem; margin: 0.15rem 0; }
+  .empty { color: #888; font-style: italic; font-size: 0.85rem; }
+  .add-case-form { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+  .add-case-form label { font-size: 0.9rem; }
+  .add-case-form input[type="text"] { font-size: 0.9rem; padding: 0.3rem 0.5rem; width: 20rem; max-width: 60vw; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<h1>{{ page_title }}</h1>
+<form class="add-case-form" method="post" action="/cases">
+  <label for="add-case-url">{{ add_case_heading }}</label>
+  <input type="text" id="add-case-url" name="url" placeholder="{{ add_case_input_label }}" required>
+  <button type="submit">{{ add_case_button_text }}</button>
+</form>
+<div class="board">
+{% for column in columns %}
+  <div class="column">
+    <h2>{{ column.label }}</h2>
+    {% if column.cases %}
+      {% for case in column.cases %}
+      <div class="card">
+        <a href="{{ case.detail_url }}">
+          <div>{{ site_label }} {{ case.site }}</div>
+          <div>{{ domain_label }} {{ case.domain }}</div>
+          <div>{{ state_label }} {{ case.state }}</div>
+          <div>{{ updated_label }} {{ case.updated_at }}</div>
+        </a>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty">{{ empty_state_text }}</p>
+    {% endif %}
+  </div>
+{% endfor %}
+</div>
+</body>
+</html>

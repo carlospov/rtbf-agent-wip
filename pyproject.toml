@@ -1,0 +1,113 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rtbf_agent"]
+
+[project]
+name = "rtbf-agent"
+version = "0.1.0"
+description = "Human-in-the-loop right-to-be-forgotten case manager: discovers accounts, drafts and tracks deletion requests, approves via Telegram/kanban"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Carlos Poveda", email = "carlospovedat1388@gmail.com" }
+]
+keywords = ["gdpr", "privacy", "rtbf", "agent", "telegram"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Email",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = [
+    "pydantic>=2.9.0",
+    "sqlmodel>=0.0.22",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "httpx>=0.27.0",
+    # Server-rendered kanban UI (issue #54), per `api/app.py`'s module docstring's explicit
+    # rejection of an SPA/build-step frontend: Jinja2 is the templating engine FastAPI has
+    # first-class support for (`fastapi.templating.Jinja2Templates`), no extra framework glue.
+    # A core dependency, not optional -- the kanban board is core to this project's spec, not an
+    # add-on like the `gmail`/`telegram` extras below.
+    "jinja2>=3.1.0",
+    # Required by FastAPI to parse `application/x-www-form-urlencoded` bodies (`Form(...)`
+    # parameters) -- the case-detail recipient-confirmation form (`api/recipient.py`) is the first
+    # route in this project to actually submit form data rather than a bare POST with no body; a
+    # core dependency, not optional, same reasoning as `jinja2` above.
+    "python-multipart>=0.0.9",
+    # Encrypted-at-rest storage for sensitive identity documents (issue #17, R6/R7).
+    "cryptography>=43.0.0",
+    # Loads `.env` into the process environment for real entrypoints (issue #84) -- previously
+    # only present transitively via uvicorn[standard], and never actually invoked, so `.env` was
+    # silently never read by anything in this codebase. A direct dependency now that it's actually
+    # used, not an accident of what uvicorn happens to pull in.
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Only required to actually talk to a real Gmail account (plugins/discovery/gmail.py). The plugin
+# module itself imports these lazily, so `GmailDiscoverySource` is fully testable against a fake
+# `GmailClient` without this extra installed -- it's only needed for `build_gmail_client`/
+# `build_installed_app_flow` against a real account.
+gmail = [
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.2.0",
+]
+# Only required to actually talk to the real Telegram Bot API (plugins/notifiers/telegram.py).
+# That module imports it lazily, only inside `PythonTelegramBotClient` and `build_application()`,
+# so `TelegramNotifier` is fully testable against a fake `TelegramBotClient` without this extra
+# installed -- it's only needed for a real bot process.
+telegram = [
+    "python-telegram-bot>=21.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.14.0",
+    "ty>=0.0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/carlospov/rtbf-agent-wip"
+Repository = "https://github.com/carlospov/rtbf-agent-wip-wip.git"
+Issues = "https://github.com/carlospov/rtbf-agent-wip-wip/issues"
+
+[project.scripts]
+rtbf-agent = "rtbf_agent.__main__:main"
+forget = "rtbf_agent.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    # A real network call to a real, running instance -- skipped automatically unless that
+    # instance's env var is set (see each integration test module's skip condition). Never runs
+    # against a mocked/fake client; the whole point is proving real-server behavior.
+    "integration: real network call to a live external service, not a mock",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection idiom is `param: T = Depends(...)` in the function signature --
+# that's the documented, correct way to use it, not a mutable-default-argument bug (B008's usual
+# target). Scoped to `api/` rather than a blanket/inline ignore since every route in the kanban UI
+# (this issue and #54/#55) will use this exact pattern.
+"src/rtbf_agent/api/**.py" = ["B008"]

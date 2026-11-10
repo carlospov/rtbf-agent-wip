@@ -1,0 +1,23 @@
+# Minimal settings for the SearXNG instance CI spins up to run the real-network integration test
+# in tests/plugins/websearch/test_searxng_integration.py (issue #65 follow-up). `use_default_settings`
+# merges this file over SearXNG's built-in defaults, so only the overrides this project actually
+# needs are listed here -- everything else (upstream engine list, UI, etc.) is upstream's default.
+#
+# The one override that matters: `search.formats` must include `json`, since SearXNGProvider
+# (src/rtbf_agent/plugins/websearch/searxng.py) talks the JSON API, and most SearXNG instances
+# (including the stock docker image) ship with JSON disabled by default.
+use_default_settings: true
+
+general:
+  instance_name: "rtbf-agent-ci"
+
+server:
+  # CI-only throwaway instance, never exposed beyond the job's own localhost -- a real secret
+  # isn't needed here the way it would be for a long-lived self-hosted instance.
+  secret_key: "ci-only-throwaway-secret-key"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

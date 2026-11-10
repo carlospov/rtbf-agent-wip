@@ -1,0 +1,37 @@
+name: AI Code Review
+
+# Runs Open Code Review (https://github.com/alibaba/open-code-review) on every PR,
+# posting inline + sticky-summary comments. Config below assumes an opencode Zen
+# (https://opencode.ai/docs/zen/) free-tier model reached via its OpenAI-compatible
+# endpoint — see docs/ci/code-review-setup.md for exact setup commands and how to
+# switch to an Anthropic-compatible Zen model or a different provider entirely.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Pinned to the commit main pointed at when this workflow was verified working
+      # (2026-07-12). Re-verify and re-pin deliberately when bumping.
+      - uses: alibaba/open-code-review@22782aa66e9ac0e81e97a35521f732ccde652366
+        with:
+          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
+          llm_model: ${{ vars.OCR_LLM_MODEL }}
+          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+          llm_auth_header: ${{ vars.OCR_LLM_AUTH_HEADER }}
+          language: 'English'
+          sticky_summary: 'true'
+          incremental: 'true'

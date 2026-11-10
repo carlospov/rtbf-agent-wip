@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least-privilege: this workflow only reads code, lints/tests/builds locally, and never pushes
+# anything or touches issues/PRs -- mirrors code-review.yml's own `permissions` block.
+permissions:
+  contents: read
+
+# Cancel a still-running CI run for the same ref when a new push arrives (e.g. a PR iterated on
+# quickly) instead of letting both run to completion -- mirrors code-review.yml's own pattern.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    # GH-hosted runners default to a 360-minute timeout -- the new SearXNG docker-pull/readiness
+    # step (issue #65 follow-up) adds a real, if unlikely, hang point (image pull stall, a bad
+    # image never reporting the JSON endpoint healthy); cap it well above this job's actual
+    # runtime (well under a minute today) so a hang fails fast instead of burning CI minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Type check (ty)
+        run: uv run ty check src
+
+      # Real, self-hosted SearXNG instance for the one real-network integration test in
+      # tests/plugins/websearch/test_searxng_integration.py (issue #65 follow-up: unit tests use
+      # httpx.MockTransport, but one real query against a real instance -- which itself queries
+      # real upstream search engines/websites -- proves the wire format assumptions actually hold
+      # against a live server, not just the shape this project assumed when writing the mock).
+      # A `docker run` step, not a GH Actions `services:` block: services start before any step
+      # runs, so they can't mount a settings file this same job checks out first.
+      - name: Start SearXNG (for the real-network integration test)
+        run: |
+          docker run -d --name searxng-ci -p 8080:8080 \
+            -v "$PWD/.github/searxng/settings.yml:/etc/searxng/settings.yml:ro" \
+            searxng/searxng:2026.7.14-58e02a01a
+          for i in $(seq 1 30); do
+            if curl -sf "http://localhost:8080/search?q=test&format=json" > /dev/null; then
+              echo "SearXNG is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SearXNG did not become ready in time" >&2
+          docker logs searxng-ci
+          exit 1
+
+      - name: Test
+        run: uv run pytest --cov=rtbf_agent --cov-report=term-missing --cov-fail-under=90
+        env:
+          RTBF_SEARXNG_BASE_URL: http://localhost:8080
+
+      - name: Stop SearXNG
+        if: always()
+        run: docker rm -f searxng-ci || true
+
+      - name: Build
+        run: uv build

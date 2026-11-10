@@ -1,0 +1,71 @@
+{# Document vault template (issue #111). Every piece of display text below is a double-brace
+   interpolation of a value that rtbf_agent.api.vault.vault_page already resolved via
+   I18nProvider.translate() -- this file itself contains no hardcoded English (or any other
+   language's) text, per R23. tests/api/test_vault.py scans this file mechanically to enforce
+   that: everything outside double-brace interpolations, percent-brace control blocks, this
+   comment, and HTML tags/attributes must be pure whitespace.
+
+   documents[].label/mime_type/size/received_at/upload_hint are the document's own metadata
+   (case_id, mime type, byte count, timestamp), not text this template invents -- "label" already
+   falls back to a "document-{id}" placeholder in vault.py itself when the human never set one.
+
+   Delete form: a plain HTML POST to api/vault.py's per-document delete route, no confirmation
+   dialog (no JS anywhere in this file, same "server-rendered, no SPA" decision as every other
+   template in this app) -- deleting your own vault document is a destructive, permanent action
+   (the file is secure-deleted on disk, not just unselected), but a self-hosted single-operator
+   tool doesn't warrant a confirmation step for it.
+
+   Download link: a plain <a> to api/vault.py's GET download route, which decrypts the document
+   for the human's own local inspection (document_store.decrypt_for_view()) -- no approval gate,
+   see that function's docstring for why.
+
+   Rename form: a plain HTML POST to api/vault.py's per-document rename route, a text input
+   pre-filled with the document's current label plus a submit button -- same no-JS, no-confirmation
+   pattern as the delete form above (renaming your own document is reversible, so it warrants even
+   less ceremony than delete).
+#}
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page_title }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; }
+  h1 { font-size: 1.25rem; }
+  .back-link { display: inline-block; margin-bottom: 1rem; }
+  .document { border: 1px solid #ccc; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .document div { font-size: 0.85rem; margin: 0.15rem 0; }
+  .document-label { font-weight: bold; font-size: 0.9rem; }
+  .empty { color: #888; font-style: italic; font-size: 0.85rem; }
+  .rename-form { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 0.25rem; }
+  .rename-form input[type="text"] { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
+</style>
+</head>
+<body>
+<a class="back-link" href="/cases">{{ back_link_text }}</a>
+<h1>{{ page_title }}</h1>
+{% if documents %}
+  {% for document in documents %}
+  <div class="document">
+    <div>
+      <div class="document-label">{{ document.label }}</div>
+      <div>{{ document.mime_type }} {{ metadata_separator_text }} {{ document.size }} {{ size_unit_text }} {{ metadata_separator_text }} {{ document.received_at }}</div>
+      <div>{{ document.upload_hint }}</div>
+      <div><a href="/vault/{{ document.id }}/download">{{ download_link_text }}</a></div>
+      <form class="rename-form" method="post" action="/vault/{{ document.id }}/rename">
+        <label for="rename-{{ document.id }}">{{ rename_label_text }}</label>
+        <input type="text" id="rename-{{ document.id }}" name="label" value="{{ document.label }}" maxlength="255">
+        <button type="submit">{{ rename_button_text }}</button>
+      </form>
+    </div>
+    <form method="post" action="/vault/{{ document.id }}/delete">
+      <button type="submit">{{ delete_button_text }}</button>
+    </form>
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="empty">{{ empty_text }}</p>
+{% endif %}
+</body>
+</html>

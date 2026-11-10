@@ -1,0 +1,184 @@
+# English (en) resource strings for `ResourceI18nProvider`.
+#
+# Flat key -> string table. Keys are dotted for readability only; the loader treats them as
+# opaque strings, not a nested structure -- so "case.status_notice" and "case_status_notice"
+# behave identically. Values may contain `{param}`-style placeholders, filled in via
+# `str.format(**params)` at `translate()` time (R23).
+
+greeting = "Hello, {name}!"
+"case.status_notice" = "Case {case_id} is now {status}."
+
+# Telegram bot copy (plugins/notifiers/telegram.py, #14) -- notify-only after the automated-case-
+# loop rework; every user-facing string that module sends is resolved from this key; see
+# tests/plugins/notifiers/test_telegram.py::test_no_literal_user_facing_strings_in_bot_or_kanban_code.
+"telegram.notification" = "Case {case_id}: {text}"
+
+# Kanban board copy (api/kanban.py, #54) -- every user-facing string that page renders is
+# resolved from one of these keys; see
+# tests/api/test_kanban.py::test_no_literal_user_facing_strings_in_bot_or_kanban_code. Column
+# labels double as each card's "state" field text, so there is exactly one key per `CaseState`,
+# not two.
+"kanban.page_title" = "Cases"
+"kanban.column.discovered" = "Discovered"
+"kanban.column.classified" = "Classified"
+"kanban.column.draft_ready" = "Draft ready"
+"kanban.column.awaiting_human_approval" = "Awaiting human approval"
+"kanban.column.awaiting_response" = "Awaiting response"
+"kanban.column.requires_human_action" = "Requires human action"
+"kanban.column.deletion_confirmed" = "Deletion confirmed"
+"kanban.column.rejected_escalated" = "Rejected/Escalated"
+"kanban.column.closed" = "Closed"
+"kanban.card.site_label" = "Site:"
+"kanban.card.domain_label" = "Domain:"
+"kanban.card.state_label" = "State:"
+"kanban.card.updated_label" = "Updated:"
+"kanban.empty_state" = "No cases in this state"
+"kanban.add_case_heading" = "Add a site you already know about"
+"kanban.add_case_input_label" = "Site URL"
+"kanban.add_case_button" = "Add case"
+
+# Add-a-case route (api/add_case.py, issue #125's kanban half) -- the web-actionable counterpart
+# of the shell's `add <url>` command. "no_target_email"/"invalid_url" are this route's 400 error
+# bodies.
+"add_case.no_target_email" = "No target email configured -- set RTBF_TARGET_EMAIL"
+"add_case.invalid_url" = "Could not extract a domain from that URL"
+
+# Case detail / event audit trail copy (api/case_detail.py, #55) -- every user-facing string that
+# page renders is resolved from one of these keys; see
+# tests/api/test_case_detail.py::test_no_literal_user_facing_strings_in_bot_or_kanban_code. State
+# labels reuse the existing "kanban.column.*" keys above (CASE_STATE_LABEL_KEYS in kanban.py) --
+# there is exactly one label per CaseState, not a second copy for this page.
+"case_detail.page_title" = "Case detail"
+"case_detail.not_found" = "Case not found"
+"case_detail.site_label" = "Site:"
+"case_detail.domain_label" = "Domain:"
+"case_detail.state_label" = "State:"
+"case_detail.back_link" = "Back to board"
+"case_detail.events_heading" = "Event history"
+"case_detail.empty_events" = "No events recorded for this case yet"
+"case_detail.event.kind_label" = "Kind:"
+"case_detail.event.actor_label" = "Actor:"
+"case_detail.event.timestamp_label" = "Timestamp:"
+"case_detail.event.document_hash_label" = "Document hash:"
+"case_detail.event.document_size_label" = "Document size (bytes):"
+"case_detail.event.document_extension_label" = "Document extension:"
+
+# Approve/reject from the kanban web UI (api/approval.py, #67) -- a second approval channel
+# alongside Telegram. "not_found"/"wrong_state" are the API error bodies for the two routes'
+# non-2xx responses; the rest are the case-detail page's approve/reject form copy, only rendered
+# when the case is actually in Draft ready.
+"approval.not_found" = "Case not found"
+"approval.wrong_state" = "Case {case_id} is not awaiting approval (state: {state})"
+"case_detail.approve_button" = "Approve draft"
+"case_detail.reject_button" = "Reject draft"
+"case_detail.approval_heading" = "This case is awaiting your approval to send"
+
+# Recipient confirmation from the kanban web UI (api/recipient.py) -- makes the deletion-request
+# recipient a first-class, web-actionable field, not CLI-only. "invalid_address" is the API error
+# body for a blank/@-less submission; the rest are the case-detail page's recipient section copy.
+"recipient.invalid_address" = "Recipient address must be non-empty and contain '@'"
+"recipient.already_approved" = "Case {case_id} is already approved for send -- recipient can no longer be changed"
+"case_detail.recipient_label" = "Recipient:"
+"case_detail.recipient_not_set" = "Not yet confirmed"
+"case_detail.recipient_heading" = "Confirm the deletion-request recipient"
+"case_detail.recipient_unverified_notice" = "!! UNVERIFIED SUGGESTION (LLM guess, NOT confirmed -- do not trust without checking):"
+"case_detail.recipient_reasoning_label" = "Reasoning:"
+"case_detail.recipient_sources_label" = "Sources:"
+"case_detail.recipient_input_label" = "Recipient email address"
+"case_detail.recipient_confirm_button" = "Confirm recipient"
+"case_detail.recipient_confirm_hint" = "Submit as-is to accept the suggestion above, or edit the address first to use a different one."
+
+# Jurisdiction/drafting-language review-and-override from the kanban web UI (api/case_overrides.py)
+# -- the review path for a no-prompt-at-creation reversal (see cli.py's module docstring): a
+# detected jurisdiction suggestion is now auto-applied with no prompt at case creation, and the
+# case-detail page is where a human reviews or overrides it (or sets drafting language from
+# scratch), only while the case is still Discovered. "not_found"/"wrong_state"/"invalid_*" are the
+# two routes' error bodies; the rest are the case-detail page's summary/form copy (case_detail.
+# jurisdiction_label/drafting_language_label also render the current value in the always-visible
+# case summary, not just inside the edit forms below).
+"case_overrides.not_found" = "Case not found"
+"case_overrides.wrong_state" = "Case {case_id} is no longer 'Discovered' -- jurisdiction/drafting language can't be changed once a case has been classified"
+"case_overrides.invalid_jurisdiction" = "Jurisdiction must be non-empty"
+"case_overrides.invalid_drafting_language" = "Drafting language must be non-empty"
+"case_detail.case_overrides_heading" = "Review or override this case's jurisdiction/drafting language"
+"case_detail.jurisdiction_label" = "Applicable jurisdiction:"
+"case_detail.jurisdiction_input_label" = "Applicable jurisdiction"
+"case_detail.jurisdiction_set_button" = "Set jurisdiction"
+"case_detail.jurisdiction_hint" = "Only editable while this case is still 'Discovered'. Blank here just means no per-case override is set yet -- the global default applies until you set one."
+"case_detail.drafting_language_label" = "Drafting language:"
+"case_detail.drafting_language_input_label" = "Drafting language"
+"case_detail.drafting_language_set_button" = "Set drafting language"
+"case_detail.drafting_language_hint" = "Only editable while this case is still 'Discovered'. Blank here just means no per-case override is set yet -- the global default applies until you set one."
+
+# Follow-up confirm/dispute from the kanban web UI (api/followup.py, automated-case-loop rework
+# Phase 5). "wrong_state" is the API error body for both routes' 409 response; the rest are the
+# case-detail page's confirm/dispute section copy, only rendered when an unconsumed classified
+# reply is actually pending.
+"followup.wrong_state" = "Case {case_id} is not awaiting a follow-up confirmation"
+"case_detail.followup_heading" = "The agent classified a reply -- confirm or dispute its reading"
+"case_detail.followup_reasoning_label" = "Agent's reasoning:"
+"case_detail.followup_confirm_button" = "Confirm"
+"case_detail.followup_dispute_button" = "Dispute"
+"case_detail.followup_confirm_hint" = "Confirm to close the case; dispute if the agent misread the reply."
+"case_detail.reopen_heading" = "This case was closed automatically -- reopen it if that was wrong"
+"case_detail.reopen_hint" = "Reopening moves the case back to 'Requires human action' for you to review."
+"case_detail.reopen_button" = "Reopen case"
+
+# Supply additional info from the kanban web UI (api/document.py, automated-case-loop rework
+# Phase 5). "invalid_text"/"invalid_document"/"nothing_to_draft" are the API error bodies for a
+# blank/empty submission or a draft attempt with nothing fresh on record; the rest are the
+# case-detail page's Requires human action section copy, only rendered while the case is actually
+# in that state.
+"additional_info.wrong_state" = "Case {case_id} is not in 'Requires human action' state"
+"additional_info.invalid_text" = "Text response must be non-empty"
+"additional_info.invalid_document" = "Document content must be non-empty"
+"additional_info.document_too_large" = "Document is too large (max 10 MB)"
+"additional_info.nothing_to_draft" = "No fresh document selection or text response is on record for this round yet -- provide at least one before drafting"
+"case_detail.additional_info_heading" = "This site is asking for additional information"
+"case_detail.additional_info_text_label" = "Text answer"
+"case_detail.additional_info_text_button" = "Submit text answer"
+"case_detail.additional_info_document_label" = "Document answer (select one or more files)"
+"case_detail.additional_info_document_button" = "Upload document"
+"case_detail.additional_info_label_field" = "Label (optional)"
+"case_detail.additional_info_hint" = "Provide a text answer and/or a document -- if you write a note, the agent will draft a reply from it; attach or select document(s) below either way. Nothing is sent automatically: once you're done providing text and/or documents for this round, use the button below to compose a preview draft, then review it before approving."
+"case_detail.additional_info_pending_text_label" = "Your current note for this round:"
+"case_detail.additional_info_draft_hint" = "Composes a preview reply from what's on record above -- review and edit it below, and nothing is sent until you approve it there."
+"case_detail.additional_info_draft_button" = "Draft"
+
+# Edit-draft from the kanban web UI (api/draft.py, LLM-drafted-replies extension). "not_found"/
+# "wrong_state"/"invalid_body" are the API error bodies for the route's non-2xx responses; the rest
+# are the case-detail page's edit-draft section copy, only rendered while the case is eligible to
+# send (Draft ready and not yet approved, or Requires human action with a pending draft) -- the
+# same window select-documents/attach-document now also accept.
+"draft.not_found" = "Case not found"
+"draft.wrong_state" = "Case {case_id} is not eligible to send/reject/edit ('Draft ready' and not yet approved, or 'Requires human action' with a pending draft)"
+"draft.invalid_body" = "Draft body must be non-empty"
+"case_detail.edit_draft_heading" = "Review or edit the drafted reply before approving"
+"case_detail.edit_draft_label" = "Draft body"
+"case_detail.edit_draft_button" = "Update draft"
+"case_detail.edit_draft_hint" = "Hand-edit the text below and submit to replace the drafted body -- your change takes effect immediately, before you approve. If this draft was composed from a note you gave the agent, review it carefully first: its wording may reflect the site's own reply text, which the agent cannot fully vouch for."
+
+# Document vault (api/vault.py, issue #111): a reusable document library, separate from the
+# per-case additional-info upload above. "not_found"/"no_selection" are API error bodies; the
+# rest is copy for the vault page and the case-detail page's "select from vault" section.
+"vault.not_found" = "Document not found in the vault"
+"vault.case_not_found" = "Case not found"
+"vault.invalid_selection" = "Selection must name at least one document currently in the vault"
+"vault.invalid_rename" = "Label must be non-empty"
+"vault.page_title" = "Document vault"
+"vault.back_link_text" = "Back to kanban board"
+"vault.empty" = "The vault is empty. Upload a document from a case's page to add one."
+"vault.delete_button" = "Delete"
+"vault.size_unit" = "bytes"
+"vault.metadata_separator" = "·"
+"vault.upload_hint" = "Uploaded from case {case_id}"
+"vault.download_link_text" = "Download"
+"vault.rename_label" = "Rename"
+"vault.rename_button" = "Save"
+"case_detail.vault_heading" = "Select from vault"
+"case_detail.vault_selected_badge" = "(currently attached)"
+"case_detail.vault_download_link_text" = "Download"
+"case_detail.vault_hint" = "Choose one or more previously uploaded documents to attach, instead of uploading a new one above."
+"case_detail.vault_select_button" = "Use selected document(s)"
+"case_detail.vault_empty" = "No documents in the vault yet -- upload one above."
+"case_detail.vault_link_text" = "Manage the vault"
